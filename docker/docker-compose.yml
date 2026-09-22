@@ -40,3 +40,13 @@ services:
 volumes:
   bitview-data:
     driver: local
+
+# Join the network Bitcoin Core is already on, instead of an isolated per-project
+# network. Reaching bitcoind through the host gateway instead makes bitcoind see
+# the connection as 127.0.0.1 and it fails auth; electrs (which works) sits on
+# this same network and talks to bitcoind container-to-container.
+# Override BRK_NETWORK if the node lives somewhere else.
+networks:
+  default:
+    name: ${BRK_NETWORK:-dokploy-network}
+    external: true
