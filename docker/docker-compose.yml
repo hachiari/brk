@@ -32,10 +32,25 @@ services:
       # - --rpccookiefile
       # - /bitcoin/.cookie
     healthcheck:
-      test: ["CMD", "pgrep", "-x", "bitviewd"]
-      interval: 30s
+      # Liveness + freshness. `pgrep bitviewd` only proves the process exists --
+      # it reported healthy for 40 min once while the server could not reach the
+      # node. Instead: open the HTTP API on :3110 (liveness), require a 200
+      # (serving), and assert the chain tip it reports is < 3h old (freshness),
+      # so a frozen-but-serving sync -- stale MVRV/SOPR under a plausible read --
+      # shows unhealthy instead of lying. Pure bash /dev/tcp: no curl, no image
+      # rebuild (runtime image already ships bash + coreutils date).
+      test:
+        - CMD
+        - bash
+        - -c
+        - "exec 3<>/dev/tcp/localhost/3110 || exit 1; printf 'GET /api/vecs/query?index=height&ids=timestamp&from=-1 HTTP/1.0\\r\\nConnection: close\\r\\n\\r\\n' >&3; r=$(cat <&3); echo $r | grep -q '200 OK' || exit 1; t=$(echo $r | grep -oE '[0-9]{9,}' | tail -1); t=${t:-0}; [ $(( $(date +%s) - t )) -lt 10800 ]"
+      interval: 60s
+      timeout: 15s
       retries: 3
-      start_period: 10s
+      # Generous so a restart's catch-up (or a slow block) never flaps. A cold
+      # 290 GiB reprocess runs longer than this and will read unhealthy until the
+      # first tip lands -- correct, but bump this if you ever rebuild from zero.
+      start_period: 15m
 
 volumes:
   bitview-data:
